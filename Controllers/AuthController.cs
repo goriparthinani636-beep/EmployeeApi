@@ -4,6 +4,10 @@ using EmployeeApi.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 namespace EmployeeApi.Controllers;
 
@@ -13,10 +17,14 @@ public class AuthController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly PasswordHasher<User> _passwordHasher;
+    private readonly IConfiguration _configuration;
 
-    public AuthController(AppDbContext context)
+    public AuthController(
+        AppDbContext context,
+        IConfiguration configuration)
     {
         _context = context;
+        _configuration = configuration;
         _passwordHasher = new PasswordHasher<User>();
     }
 
@@ -61,19 +69,15 @@ public class AuthController : ControllerBase
         }
 
         var storedPassword = user.PasswordHash ?? string.Empty;
-
         PasswordVerificationResult verification;
 
-        // Check whether the stored value is an ASP.NET Identity hash.
         if (storedPassword.StartsWith(
                 "AQAAAA", StringComparison.Ordinal))
         {
             try
             {
                 verification = _passwordHasher.VerifyHashedPassword(
-                    user,
-                    storedPassword,
-                    request.Password);
+                    user, storedPassword, request.Password);
             }
             catch (FormatException)
             {
@@ -92,8 +96,6 @@ public class AuthController : ControllerBase
         }
         else
         {
-            // Legacy plain-text password compatibility.
-            // Replace these legacy values with proper hashes after login.
             verification = string.Equals(
                 storedPassword,
                 request.Password,
@@ -114,28 +116,65 @@ public class AuthController : ControllerBase
             PasswordVerificationResult.SuccessRehashNeeded)
         {
             user.PasswordHash = _passwordHasher.HashPassword(
-                user,
-                request.Password);
+                user, request.Password);
 
             user.UpdatedAt = DateTime.UtcNow;
-
             await _context.SaveChangesAsync();
         }
 
-        // NOTE:
-        // This endpoint does not issue a real JWT yet.
-        // Do not use a dummy token to authorize protected API endpoints.
+        // Read JWT settings from configuration / Render environment.
+        var jwtKey = _configuration["Jwt:Key"];
+        var issuer = _configuration["Jwt:Issuer"] ?? "EmployeeApi";
+        var audience = _configuration["Jwt:Audience"] ?? "EmployeeApp";
+
+        if (string.IsNullOrWhiteSpace(jwtKey) ||
+            Encoding.UTF8.GetByteCount(jwtKey) < 32)
+        {
+            return StatusCode(500, new
+            {
+                message = "JWT configuration is missing or invalid."
+            });
+        }
+
+        var securityKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(jwtKey));
+
+        var signingCredentials = new SigningCredentials(
+            securityKey,
+            SecurityAlgorithms.HmacSha256);
+
+        var userName = $"{user.FirstName} {user.LastName}".Trim();
+        var expiresAt = DateTime.UtcNow.AddMinutes(15);
+
+        var claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim(ClaimTypes.Name, userName),
+            new Claim(ClaimTypes.Email, user.Email),
+            new Claim(ClaimTypes.Role, user.Role ?? string.Empty)
+        };
+
+        var token = new JwtSecurityToken(
+            issuer: issuer,
+            audience: audience,
+            claims: claims,
+            notBefore: DateTime.UtcNow,
+            expires: expiresAt,
+            signingCredentials: signingCredentials);
+
+        var accessToken = new JwtSecurityTokenHandler()
+            .WriteToken(token);
 
         return Ok(new
         {
             message = "Login successful",
-            accessToken = (string?)null,
+            accessToken = accessToken,
             refreshToken = (string?)null,
             expiresIn = 900,
             user = new
             {
                 id = user.Id,
-                name = $"{user.FirstName} {user.LastName}".Trim(),
+                name = userName,
                 role = user.Role
             }
         });
