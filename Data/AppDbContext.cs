@@ -11,4 +11,7 @@ public class AppDbContext : DbContext
     public DbSet<Employee> Employees { get; set; }
 
     public DbSet<TaskItem> Tasks { get; set; }
+
+    public DbSet<FileUpload> FileUploads { get; set; }
+        = null!;
 }

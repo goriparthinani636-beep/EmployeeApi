@@ -1,11 +1,27 @@
 
 using EmployeeApi.Data;
+using CloudinaryDotNet;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var cloudName = builder.Configuration["Cloudinary:CloudName"];
+var apiKey = builder.Configuration["Cloudinary:ApiKey"];
+var apiSecret = builder.Configuration["Cloudinary:ApiSecret"];
+
+if (string.IsNullOrWhiteSpace(cloudName) ||
+    string.IsNullOrWhiteSpace(apiKey) ||
+    string.IsNullOrWhiteSpace(apiSecret))
+{
+    throw new InvalidOperationException(
+        "Cloudinary configuration is missing.");
+}
+
+var account = new Account(cloudName, apiKey, apiSecret);
+builder.Services.AddSingleton(new Cloudinary(account));
 
 var connectionName = builder.Environment.IsDevelopment()
     ? "DefaultConnection"
