@@ -56,6 +56,12 @@ namespace EmployeeApi.Migrations
                     b.Property<string>("Phone")
                         .HasColumnType("text");
 
+                    b.Property<string>("ResumeFileName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ResumeUrl")
+                        .HasColumnType("text");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text");

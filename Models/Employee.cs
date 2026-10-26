@@ -10,5 +10,7 @@ public class Employee
     public string Department { get; set; } = string.Empty;
     public string Designation { get; set; } = string.Empty;
     public string Status { get; set; } = "Active";
+    public string? ResumeUrl { get; set; }
+    public string? ResumeFileName { get; set; }
     public DateTime JoiningDate { get; set; } = DateTime.UtcNow;
 }

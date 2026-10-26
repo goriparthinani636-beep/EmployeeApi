@@ -72,6 +72,8 @@ public class EmployeesController : ControllerBase
         existing.Department = updated.Department;
         existing.Designation = updated.Designation;
         existing.Status = updated.Status;
+        existing.ResumeUrl = updated.ResumeUrl;
+        existing.ResumeFileName = updated.ResumeFileName;
 
         await _context.SaveChangesAsync();
         return Ok(existing);

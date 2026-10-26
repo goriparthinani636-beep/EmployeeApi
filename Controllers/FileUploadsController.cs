@@ -122,7 +122,8 @@ public class FileUploadsController : ControllerBase
                         {
                             File = new FileDescription(fileName, stream),
                             Folder = "employee-app-uploads",
-                            PublicId = Guid.NewGuid().ToString("N"),
+                            // Raw public IDs must retain the original extension.
+                            PublicId = Guid.NewGuid().ToString("N") + extension,
                             Overwrite = false
                         });
 
