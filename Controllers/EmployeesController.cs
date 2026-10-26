@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using EmployeeApi.Data;
@@ -77,6 +78,21 @@ public class EmployeesController : ControllerBase
 
         await _context.SaveChangesAsync();
         return Ok(existing);
+    }
+
+    // Remove only the attachment; do not overwrite employee profile fields.
+    [Authorize]
+    [HttpDelete("{id}/resume")]
+    public async Task<IActionResult> RemoveResume(int id, CancellationToken cancellationToken)
+    {
+        var employee = await _context.Employees.FindAsync(new object[] { id }, cancellationToken);
+        if (employee == null)
+            return NotFound(new { message = "Employee not found." });
+
+        employee.ResumeUrl = null;
+        employee.ResumeFileName = null;
+        await _context.SaveChangesAsync(cancellationToken);
+        return NoContent();
     }
 
     // 5. DELETE: /api/employees/{id}

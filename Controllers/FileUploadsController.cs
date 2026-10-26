@@ -207,6 +207,49 @@ public class FileUploadsController : ControllerBase
         }
     }
 
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteUpload(int id, CancellationToken cancellationToken)
+    {
+        var userIdValue = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst("sub")?.Value;
+        if (!int.TryParse(userIdValue, out var userId))
+            return Unauthorized(new { message = "Please sign in again." });
+
+        var upload = await _db.FileUploads.FindAsync(new object[] { id }, cancellationToken);
+        if (upload == null)
+            return NoContent();
+        if (upload.UploadedByUserId != userId)
+            return StatusCode(403, new { message = "You can only delete files you uploaded." });
+
+        if (await _db.Employees.AnyAsync(e => e.ResumeUrl == upload.FileUrl, cancellationToken))
+            return Conflict(new { message = "This file is attached to an employee. Remove it from the employee profile first." });
+
+        try
+        {
+            var isImage = upload.FileFormat.ToLowerInvariant() is ".jpg" or ".jpeg" or ".png";
+            var result = await _cloudinary.DestroyAsync(new DeletionParams(upload.CloudinaryPublicId)
+            {
+                ResourceType = isImage ? ResourceType.Image : ResourceType.Raw,
+                Invalidate = true
+            });
+            // A retry after a database failure may find the cloud asset already gone.
+            if (result.Error != null || (result.Result != "ok" && result.Result != "not found"))
+            {
+                _logger.LogWarning("Cloudinary deletion failed for upload {UploadId}.", id);
+                return StatusCode(502, new { message = "The file host could not delete the file. Please try again." });
+            }
+
+            _db.FileUploads.Remove(upload);
+            await _db.SaveChangesAsync(cancellationToken);
+            return NoContent();
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Deletion failed for upload {UploadId}.", id);
+            return StatusCode(500, new { message = "Could not complete file deletion. Please retry." });
+        }
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetUploads(CancellationToken cancellationToken)
     {
