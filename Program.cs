@@ -53,6 +53,10 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = AccessScope.ValidateToken
+        };
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,

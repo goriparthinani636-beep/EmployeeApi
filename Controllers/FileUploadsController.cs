@@ -11,7 +11,7 @@ namespace EmployeeApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Authorize(Roles = "Manager,Employee")]
 public class FileUploadsController : ControllerBase
 {
     private const long MaxFileSize = 5 * 1024 * 1024;
@@ -218,7 +218,7 @@ public class FileUploadsController : ControllerBase
         var upload = await _db.FileUploads.FindAsync(new object[] { id }, cancellationToken);
         if (upload == null)
             return NoContent();
-        if (upload.UploadedByUserId != userId)
+        if (!User.IsManager() && upload.UploadedByUserId != userId)
             return StatusCode(403, new { message = "You can only delete files you uploaded." });
 
         if (await _db.Employees.AnyAsync(e => e.ResumeUrl == upload.FileUrl, cancellationToken))
@@ -254,6 +254,8 @@ public class FileUploadsController : ControllerBase
     public async Task<IActionResult> GetUploads(CancellationToken cancellationToken)
     {
         var uploads = await _db.FileUploads
+            .Where(f => User.IsManager() || f.UploadedByUserId == User.UserId())
+            .Where(f => User.IsManager() || f.UploadedByUserId == User.UserId())
             .AsNoTracking()
             .OrderByDescending(f => f.UploadedAt)
             .Select(f => new

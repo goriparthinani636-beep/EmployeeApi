@@ -34,6 +34,7 @@ public class AuthController : ControllerBase
     {
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+        public string Role { get; set; } = string.Empty;
     }
 
     public class RefreshRequest
@@ -66,6 +67,9 @@ public class AuthController : ControllerBase
                 message = "Invalid email or password."
             });
         }
+
+        if (request.Role != user.Role || user.Role is not ("Manager" or "Employee") || (user.Role == "Employee" && user.EmployeeId == null))
+            return Unauthorized(new { message = "Invalid email, password, or login type." });
 
         var storedPassword = user.PasswordHash ?? string.Empty;
         PasswordVerificationResult verification;
@@ -140,7 +144,9 @@ public class AuthController : ControllerBase
             {
                 id = user.Id,
                 name = $"{user.FirstName} {user.LastName}".Trim(),
-                role = user.Role
+                role = user.Role,
+                email = user.Email,
+                employeeId = user.EmployeeId
             }
         });
     }
@@ -170,6 +176,9 @@ public class AuthController : ControllerBase
             });
         }
 
+        if (user.Role is not ("Manager" or "Employee") || (user.Role == "Employee" && user.EmployeeId == null))
+            return Unauthorized();
+
         var newAccessToken = CreateAccessToken(user);
         var newRefreshToken = GenerateRefreshToken();
 
@@ -188,7 +197,9 @@ public class AuthController : ControllerBase
             {
                 id = user.Id,
                 name = $"{user.FirstName} {user.LastName}".Trim(),
-                role = user.Role
+                role = user.Role,
+                email = user.Email,
+                employeeId = user.EmployeeId
             }
         });
     }
@@ -211,6 +222,8 @@ public class AuthController : ControllerBase
 
         if (user != null)
         {
+            user.SecurityVersion++;
+            user.UpdatedAt = DateTime.UtcNow;
             user.RefreshTokenHash = null;
             user.RefreshTokenExpiry = null;
             await _context.SaveChangesAsync();
@@ -252,16 +265,47 @@ public class AuthController : ControllerBase
             {
                 id = user.Id,
                 name = $"{user.FirstName} {user.LastName}".Trim(),
-                role = user.Role
+                role = user.Role,
+                email = user.Email,
+                employeeId = user.EmployeeId
             }
         });
     }
 
     // GET /api/auth/test
+    public class ChangePasswordRequest
+    {
+        public string CurrentPassword { get; set; } = "";
+        public string NewPassword { get; set; } = "";
+    }
+
+    [Authorize(Roles = "Manager,Employee")]
+    [HttpPost("change-password")]
+    public async Task<IActionResult> ChangePassword(ChangePasswordRequest request)
+    {
+        if (request.NewPassword.Length < 6 || request.NewPassword == request.CurrentPassword)
+            return BadRequest(new { message = "Use a different new password with at least 6 characters." });
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == User.UserId() && u.IsActive);
+        if (user == null) return Unauthorized();
+        PasswordVerificationResult result;
+        try { result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword); }
+        catch (Exception exception) when (exception is FormatException or ArgumentException)
+        { result = PasswordVerificationResult.Failed; }
+        if (result == PasswordVerificationResult.Failed)
+            return BadRequest(new { message = "Current password is incorrect. Sign in once before changing a legacy password." });
+        user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
+        user.SecurityVersion++;
+        user.RefreshTokenHash = null;
+        user.RefreshTokenExpiry = null;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { message = "Password changed. Please sign in again." });
+    }
+
     [HttpGet("test")]
     public IActionResult Test()
     {
-        return Ok(new { message = "EmployeeApi is reachable" });
+        return Ok(new { message = "EmployeeApi is reachable", apiVersion = "employee-access-v2" });
     }
 
     private string CreateAccessToken(User user)
@@ -283,7 +327,9 @@ public class AuthController : ControllerBase
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Name, $"{user.FirstName} {user.LastName}".Trim()),
             new(ClaimTypes.Email, user.Email),
-            new(ClaimTypes.Role, user.Role ?? string.Empty)
+            new(ClaimTypes.Role, user.Role),
+            new("employeeId", user.EmployeeId?.ToString() ?? ""),
+            new("sv", user.SecurityVersion.ToString())
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using EmployeeApi.Data;
@@ -5,6 +6,7 @@ using EmployeeApi.Models;
 
 namespace EmployeeApi.Controllers;
 
+[Authorize(Roles = "Manager,Employee")]
 [ApiController]
 [Route("api/[controller]")]
 public class TasksController : ControllerBase
@@ -20,7 +22,7 @@ public class TasksController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var tasks = await _context.Tasks
+        var tasks = await _context.VisibleTasks(User)
             .Include(t => t.Employee)
             .OrderByDescending(t => t.Id)
             .ToListAsync();
@@ -29,10 +31,15 @@ public class TasksController : ControllerBase
     }
 
     // 2. GET: /api/tasks/{id}
+    [Authorize(Roles = "Employee")]
+    [HttpGet("/api/employees/me/tasks")]
+    public async Task<IActionResult> GetMine() => Ok(await _context.VisibleTasks(User)
+        .Include(t => t.Employee).OrderByDescending(t => t.Id).ToListAsync());
+
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var task = await _context.Tasks
+        var task = await _context.VisibleTasks(User)
             .Include(t => t.Employee)
             .FirstOrDefaultAsync(t => t.Id == id);
 
@@ -46,7 +53,7 @@ public class TasksController : ControllerBase
     [HttpGet("/api/employees/{employeeId}/tasks")]
     public async Task<IActionResult> GetByEmployee(int employeeId)
     {
-        var tasks = await _context.Tasks
+        var tasks = await _context.VisibleTasks(User)
             .Where(t => t.EmployeeId == employeeId)
             .OrderByDescending(t => t.Id)
             .ToListAsync();
@@ -55,6 +62,7 @@ public class TasksController : ControllerBase
     }
 
     // 4. POST: /api/tasks
+    [Authorize(Roles = "Manager")]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] TaskItem task)
     {
@@ -76,10 +84,11 @@ public class TasksController : ControllerBase
     }
 
     // 5. PUT: /api/tasks/{id}
+    [Authorize(Roles = "Manager")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] TaskItem updated)
     {
-        var existing = await _context.Tasks.FindAsync(id);
+        var existing = await _context.VisibleTasks(User).FirstOrDefaultAsync(t => t.Id == id);
         if (existing == null)
             return NotFound(new { message = $"Task with ID {id} not found." });
 
@@ -103,10 +112,12 @@ public class TasksController : ControllerBase
     [HttpPatch("{id}/status")]
     public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateTaskStatusDto dto)
     {
-        var existing = await _context.Tasks.FindAsync(id);
+        var existing = await _context.VisibleTasks(User).FirstOrDefaultAsync(t => t.Id == id);
         if (existing == null)
             return NotFound(new { message = $"Task with ID {id} not found." });
 
+        if (dto.Status is not ("Pending" or "InProgress" or "Completed"))
+            return BadRequest(new { message = "Invalid task status." });
         existing.Status = dto.Status;
         existing.UpdatedAt = DateTime.UtcNow;
 
@@ -115,10 +126,11 @@ public class TasksController : ControllerBase
     }
 
     // 7. DELETE: /api/tasks/{id}
+    [Authorize(Roles = "Manager")]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var existing = await _context.Tasks.FindAsync(id);
+        var existing = await _context.VisibleTasks(User).FirstOrDefaultAsync(t => t.Id == id);
         if (existing == null)
             return NotFound(new { message = $"Task with ID {id} not found." });
 

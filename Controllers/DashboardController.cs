@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using EmployeeApi.Data;
 
 namespace EmployeeApi.Controllers;
 
+[Authorize(Roles = "Manager")]
 [ApiController]
 [Route("api/[controller]")]
 public class DashboardController : ControllerBase

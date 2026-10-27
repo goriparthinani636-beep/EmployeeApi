@@ -30,17 +30,11 @@ namespace EmployeeApi.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<DateTime>("AttendanceDate")
+                    b.Property<DateTime>("CheckedInAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime>("CheckInTime")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CloudinaryPublicId")
-                        .HasColumnType("text");
-
-                    b.Property<double>("DistanceFromCompany")
-                        .HasColumnType("double precision");
+                    b.Property<int>("EmployeeId")
+                        .HasColumnType("integer");
 
                     b.Property<double>("Latitude")
                         .HasColumnType("double precision");
@@ -48,20 +42,19 @@ namespace EmployeeApi.Migrations
                     b.Property<double>("Longitude")
                         .HasColumnType("double precision");
 
-                    b.Property<string>("SelfieUrl")
+                    b.Property<byte[]>("Selfie")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("bytea");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("integer");
+                    b.Property<DateOnly>("WorkDate")
+                        .HasColumnType("date");
 
                     b.HasKey("Id");
 
-                    b.ToTable("Attendances");
+                    b.HasIndex("EmployeeId", "WorkDate")
+                        .IsUnique();
+
+                    b.ToTable("Attendance");
                 });
 
             modelBuilder.Entity("EmployeeApi.Models.Employee", b =>
@@ -217,6 +210,9 @@ namespace EmployeeApi.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int?>("EmployeeId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("FirstName")
                         .IsRequired()
                         .HasColumnType("text");
@@ -242,12 +238,32 @@ namespace EmployeeApi.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int>("SecurityVersion")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.HasIndex("EmployeeId")
+                        .IsUnique();
+
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("EmployeeApi.Models.Attendance", b =>
+                {
+                    b.HasOne("EmployeeApi.Models.Employee", "Employee")
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Employee");
                 });
 
             modelBuilder.Entity("EmployeeApi.Models.TaskItem", b =>
@@ -257,6 +273,16 @@ namespace EmployeeApi.Migrations
                         .HasForeignKey("EmployeeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Employee");
+                });
+
+            modelBuilder.Entity("EmployeeApi.Models.User", b =>
+                {
+                    b.HasOne("EmployeeApi.Models.Employee", "Employee")
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Employee");
                 });

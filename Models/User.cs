@@ -3,6 +3,9 @@ namespace EmployeeApi.Models;
 
 public class User
 {
+    public int? EmployeeId { get; set; }
+    public Employee? Employee { get; set; }
+    public int SecurityVersion { get; set; }
     public int Id { get; set; }
 
     public string FirstName { get; set; } = string.Empty;

@@ -1,275 +1,92 @@
-
-using System.Security.Claims;
-using CloudinaryDotNet;
-using CloudinaryDotNet.Actions;
 using EmployeeApi.Data;
 using EmployeeApi.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace EmployeeApi.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
-[Authorize]
-public class AttendanceController : ControllerBase
+[Route("api/attendance")]
+[Authorize(Roles = "Manager,Employee")]
+public class AttendanceController(AppDbContext db, IConfiguration configuration) : ControllerBase
 {
-    private readonly AppDbContext _context;
-    private readonly Cloudinary _cloudinary;
-    private readonly IConfiguration _configuration;
-
-    public AttendanceController(
-        AppDbContext context,
-        Cloudinary cloudinary,
-        IConfiguration configuration)
+    private bool Office(out double latitude, out double longitude, out double radius)
     {
-        _context = context;
-        _cloudinary = cloudinary;
-        _configuration = configuration;
+        latitude = configuration.GetValue<double?>("Attendance:Latitude") ?? double.NaN;
+        longitude = configuration.GetValue<double?>("Attendance:Longitude") ?? double.NaN;
+        radius = configuration.GetValue<double?>("Attendance:RadiusMeters") ?? 500;
+        return double.IsFinite(latitude) && Math.Abs(latitude) <= 90 &&
+            double.IsFinite(longitude) && Math.Abs(longitude) <= 180 && double.IsFinite(radius) && radius > 0;
     }
 
-    [HttpPost]
-    [Consumes("multipart/form-data")]
-    public async Task<IActionResult> MarkAttendance(
-        [FromForm] IFormFile selfie,
-        [FromForm] double latitude,
-        [FromForm] double longitude)
+    [HttpGet("office")]
+    public IActionResult GetOffice()
     {
-        var userIdValue = User.FindFirstValue(
-            ClaimTypes.NameIdentifier);
-
-        if (!int.TryParse(userIdValue, out var userId))
-        {
-            return Unauthorized(new
-            {
-                message = "Invalid user identity."
-            });
-        }
-
-        if (selfie == null || selfie.Length == 0)
-        {
-            return BadRequest(new
-            {
-                message = "Selfie is required."
-            });
-        }
-
-        if (selfie.Length > 5 * 1024 * 1024)
-        {
-            return BadRequest(new
-            {
-                message = "Selfie must be 5 MB or smaller."
-            });
-        }
-
-        if (!selfie.ContentType.Equals(
-                "image/jpeg",
-                StringComparison.OrdinalIgnoreCase) &&
-            !selfie.ContentType.Equals(
-                "image/png",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return BadRequest(new
-            {
-                message = "Only JPEG and PNG selfies are allowed."
-            });
-        }
-
-        if (!double.IsFinite(latitude) ||
-            !double.IsFinite(longitude) ||
-            latitude < -90 || latitude > 90 ||
-            longitude < -180 || longitude > 180)
-        {
-            return BadRequest(new
-            {
-                message = "Invalid GPS coordinates."
-            });
-        }
-
-        var companyLatitude = _configuration.GetValue<double?>(
-            "Attendance:CompanyLatitude");
-
-        var companyLongitude = _configuration.GetValue<double?>(
-            "Attendance:CompanyLongitude");
-
-        var allowedRadius = _configuration.GetValue<double?>(
-            "Attendance:AllowedRadiusMeters") ?? 100;
-
-        if (companyLatitude == null ||
-            companyLongitude == null ||
-            allowedRadius <= 0)
-        {
-            return StatusCode(500, new
-            {
-                message = "Company attendance location is not configured."
-            });
-        }
-
-        var distance = GetDistanceInMeters(
-            latitude,
-            longitude,
-            companyLatitude.Value,
-            companyLongitude.Value);
-
-        if (distance > allowedRadius)
-        {
-            return BadRequest(new
-            {
-                message = "You are outside the permitted attendance area.",
-                distanceMeters = Math.Round(distance, 2),
-                allowedRadiusMeters = allowedRadius
-            });
-        }
-
-        var now = DateTime.UtcNow;
-        var today = now.Date;
-
-        var alreadyMarked = await _context.Attendances.AnyAsync(a =>
-            a.UserId == userId &&
-            a.AttendanceDate.Date == today);
-
-        if (alreadyMarked)
-        {
-            return Conflict(new
-            {
-                message = "Attendance has already been marked today."
-            });
-        }
-
-        string? uploadedPublicId = null;
-
-        try
-        {
-            await using var stream = selfie.OpenReadStream();
-
-            var uploadResult = await _cloudinary.UploadAsync(
-                new ImageUploadParams
-                {
-                    File = new FileDescription(
-                        selfie.FileName,
-                        stream),
-                    Folder = "employee-attendance",
-                    PublicId = $"attendance_{userId}_{Guid.NewGuid():N}"
-                });
-
-            if (uploadResult.Error != null ||
-                uploadResult.SecureUrl == null)
-            {
-                return StatusCode(502, new
-                {
-                    message = "Selfie upload failed."
-                });
-            }
-
-            uploadedPublicId = uploadResult.PublicId;
-
-            var attendance = new Attendance
-            {
-                UserId = userId,
-                AttendanceDate = today,
-                CheckInTime = now,
-                Latitude = latitude,
-                Longitude = longitude,
-                DistanceFromCompany = Math.Round(distance, 2),
-                SelfieUrl = uploadResult.SecureUrl.ToString(),
-                CloudinaryPublicId = uploadResult.PublicId,
-                Status = "Present"
-            };
-
-            _context.Attendances.Add(attendance);
-            await _context.SaveChangesAsync();
-
-            return Ok(new
-            {
-                message = "Attendance marked successfully.",
-                attendance = new
-                {
-                    attendance.Id,
-                    attendance.UserId,
-                    attendance.AttendanceDate,
-                    attendance.CheckInTime,
-                    attendance.DistanceFromCompany,
-                    attendance.SelfieUrl,
-                    attendance.Status
-                }
-            });
-        }
-        catch (Exception)
-        {
-            if (!string.IsNullOrWhiteSpace(uploadedPublicId))
-            {
-                try
-                {
-                    await _cloudinary.DestroyAsync(
-                        new DeletionParams(uploadedPublicId));
-                }
-                catch
-                {
-                    // Keep the original attendance error.
-                }
-            }
-
-            return StatusCode(500, new
-            {
-                message = "Unable to save attendance."
-            });
-        }
+        if (!Office(out var latitude, out var longitude, out var radiusMeters))
+            return StatusCode(503, new { message = "Office map pin has not been configured. Contact your manager." });
+        return Ok(new { name = configuration["Attendance:Name"] ?? "Appzon Technologies", latitude, longitude, radiusMeters });
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAttendance()
+    public async Task<IActionResult> List()
     {
-        var userIdValue = User.FindFirstValue(
-            ClaimTypes.NameIdentifier);
-
-        if (!int.TryParse(userIdValue, out var userId))
-        {
-            return Unauthorized();
-        }
-
-        var isAdmin = User.IsInRole("Admin");
-
-        var query = _context.Attendances.AsNoTracking();
-
-        if (!isAdmin)
-        {
-            query = query.Where(a => a.UserId == userId);
-        }
-
-        var records = await query
-            .OrderByDescending(a => a.CheckInTime)
-            .ToListAsync();
-
+        var records = await db.Attendance.AsNoTracking()
+            .Where(a => User.IsManager() || a.EmployeeId == User.EmployeeId())
+            .OrderByDescending(a => a.CheckedInAt)
+            .Select(a => new { a.Id, a.EmployeeId, employeeName = a.Employee!.FirstName + " " + a.Employee.LastName,
+                a.WorkDate, a.CheckedInAt, a.Latitude, a.Longitude }).ToListAsync();
         return Ok(records);
     }
 
-    private static double GetDistanceInMeters(
-        double latitude1,
-        double longitude1,
-        double latitude2,
-        double longitude2)
+    [HttpGet("{id:int}/selfie")]
+    public async Task<IActionResult> Selfie(int id)
     {
-        const double earthRadius = 6371000;
+        var record = await db.Attendance.AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == id && (User.IsManager() || a.EmployeeId == User.EmployeeId()));
+        return record == null ? NotFound() : Ok(new { dataUri = "data:image/jpeg;base64," + Convert.ToBase64String(record.Selfie) });
+    }
 
-        static double ToRadians(double degrees) =>
-            degrees * Math.PI / 180;
+    [HttpPost]
+    [RequestSizeLimit(6 * 1024 * 1024)]
+    public async Task<IActionResult> CheckIn([FromForm] IFormFile selfie,
+        [FromForm, BindRequired] double latitude, [FromForm, BindRequired] double longitude)
+    {
+        var employeeId = User.EmployeeId();
+        if (employeeId == null || !await db.Employees.AnyAsync(e => e.Id == employeeId && e.Status.ToLower() == "active"))
+            return BadRequest(new { message = "Your account must be linked to an active employee." });
+        if (!Office(out var officeLat, out var officeLon, out var radius))
+            return StatusCode(503, new { message = "Office map pin has not been configured." });
+        if (!double.IsFinite(latitude) || !double.IsFinite(longitude) || Math.Abs(latitude) > 90 || Math.Abs(longitude) > 180)
+            return BadRequest(new { message = "Valid location coordinates are required." });
+        if (Distance(latitude, longitude, officeLat, officeLon) > radius)
+            return BadRequest(new { message = "You are outside the office attendance area." });
+        if (selfie == null || selfie.Length < 4 || selfie.Length > 5 * 1024 * 1024)
+            return BadRequest(new { message = "Provide a JPEG selfie up to 5 MB." });
+        await using var memory = new MemoryStream();
+        await selfie.CopyToAsync(memory);
+        var bytes = memory.ToArray();
+        if (bytes[0] != 0xff || bytes[1] != 0xd8 || bytes[2] != 0xff || bytes[^2] != 0xff || bytes[^1] != 0xd9)
+            return BadRequest(new { message = "The selfie must be a JPEG image." });
+        var now = DateTime.UtcNow;
+        var workDate = DateOnly.FromDateTime(now.AddHours(5.5));
+        if (await db.Attendance.AnyAsync(a => a.EmployeeId == employeeId && a.WorkDate == workDate))
+            return Conflict(new { message = "Attendance is already recorded for today." });
+        var record = new Attendance { EmployeeId = employeeId.Value, WorkDate = workDate,
+            CheckedInAt = now, Latitude = latitude, Longitude = longitude, Selfie = bytes };
+        db.Attendance.Add(record);
+        try { await db.SaveChangesAsync(); }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: "23505" })
+        { return Conflict(new { message = "Attendance is already recorded for today." }); }
+        return Ok(new { record.Id, record.WorkDate, record.CheckedInAt });
+    }
 
-        var dLat = ToRadians(latitude2 - latitude1);
-        var dLon = ToRadians(longitude2 - longitude1);
-
-        var a =
-            Math.Pow(Math.Sin(dLat / 2), 2) +
-            Math.Cos(ToRadians(latitude1)) *
-            Math.Cos(ToRadians(latitude2)) *
-            Math.Pow(Math.Sin(dLon / 2), 2);
-
-        var boundedA = Math.Clamp(a, 0.0, 1.0);
-
-        return earthRadius *
-            2 *
-            Math.Atan2(
-                Math.Sqrt(boundedA),
-                Math.Sqrt(1 - boundedA));
+    public static double Distance(double lat, double lon, double otherLat, double otherLon)
+    {
+        double Rad(double value) => value * Math.PI / 180;
+        var a = Math.Pow(Math.Sin(Rad(otherLat - lat) / 2), 2) +
+            Math.Cos(Rad(lat)) * Math.Cos(Rad(otherLat)) * Math.Pow(Math.Sin(Rad(otherLon - lon) / 2), 2);
+        return 6371000 * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(Math.Max(0, 1 - a)));
     }
 }
