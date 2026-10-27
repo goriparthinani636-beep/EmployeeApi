@@ -22,6 +22,48 @@ namespace EmployeeApi.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("EmployeeApi.Models.Attendance", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("AttendanceDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CheckInTime")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CloudinaryPublicId")
+                        .HasColumnType("text");
+
+                    b.Property<double>("DistanceFromCompany")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("Latitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("Longitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("SelfieUrl")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Attendances");
+                });
+
             modelBuilder.Entity("EmployeeApi.Models.Employee", b =>
                 {
                     b.Property<int>("Id")
