@@ -70,6 +70,8 @@ public class AccountsController(AppDbContext db) : ControllerBase
         user.UpdatedAt = DateTime.UtcNow;
         if (request.Password.Length > 0)
             user.PasswordHash = new PasswordHasher<User>().HashPassword(user, request.Password);
+        if (id.HasValue)
+            db.DevicePushTokens.RemoveRange(await db.DevicePushTokens.Where(d => d.UserId == user.Id).ToListAsync());
         user.SecurityVersion++;
         user.RefreshTokenHash = null;
         user.RefreshTokenExpiry = null;

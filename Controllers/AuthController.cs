@@ -222,6 +222,7 @@ public class AuthController : ControllerBase
 
         if (user != null)
         {
+            _context.DevicePushTokens.RemoveRange(await _context.DevicePushTokens.Where(d => d.UserId == user.Id).ToListAsync());
             user.SecurityVersion++;
             user.UpdatedAt = DateTime.UtcNow;
             user.RefreshTokenHash = null;
@@ -294,6 +295,7 @@ public class AuthController : ControllerBase
         if (result == PasswordVerificationResult.Failed)
             return BadRequest(new { message = "Current password is incorrect. Sign in once before changing a legacy password." });
         user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
+        _context.DevicePushTokens.RemoveRange(await _context.DevicePushTokens.Where(d => d.UserId == user.Id).ToListAsync());
         user.SecurityVersion++;
         user.RefreshTokenHash = null;
         user.RefreshTokenExpiry = null;
@@ -305,7 +307,7 @@ public class AuthController : ControllerBase
     [HttpGet("test")]
     public IActionResult Test()
     {
-        return Ok(new { message = "EmployeeApi is reachable", apiVersion = "employee-access-v2" });
+        return Ok(new { message = "EmployeeApi is reachable", apiVersion = "task-push-v1" });
     }
 
     private string CreateAccessToken(User user)

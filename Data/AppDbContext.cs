@@ -9,9 +9,19 @@ public class AppDbContext : DbContext
 
     public DbSet<User> Users { get; set; }
     public DbSet<Attendance> Attendance { get; set; }
+    public DbSet<DevicePushToken> DevicePushTokens { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<DevicePushToken>()
+            .HasIndex(t => t.PushToken)
+            .IsUnique();
+        modelBuilder.Entity<DevicePushToken>()
+            .HasOne(t => t.User)
+            .WithMany()
+            .HasForeignKey(t => t.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         modelBuilder.Entity<User>().HasIndex(u => u.Email).IsUnique();
         modelBuilder.Entity<User>().HasIndex(u => u.EmployeeId).IsUnique();
         modelBuilder.Entity<User>().HasOne(u => u.Employee).WithMany()

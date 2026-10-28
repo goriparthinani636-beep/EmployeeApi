@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using System.Net.Http.Headers;
+using EmployeeApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -75,6 +77,19 @@ builder.Services
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddScoped<IDevicePushRegistry, DevicePushRegistry>();
+builder.Services.AddScoped<ITaskPushService, TaskPushService>();
+builder.Services.AddSingleton<PushReceiptTracker>();
+builder.Services.AddHostedService<PushReceiptWorker>();
+builder.Services.AddHttpClient("ExpoPush", client =>
+{
+    client.BaseAddress = new Uri("https://exp.host/--/api/v2/push/");
+    client.Timeout = TimeSpan.FromSeconds(10);
+    client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+    var token = builder.Configuration["Expo:AccessToken"];
+    if (!string.IsNullOrWhiteSpace(token))
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+});
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();

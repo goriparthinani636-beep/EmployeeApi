@@ -57,6 +57,20 @@ namespace EmployeeApi.Migrations
                     b.ToTable("Attendance");
                 });
 
+            modelBuilder.Entity("EmployeeApi.Models.DevicePushToken", b =>
+                {
+                    b.Property<int>("Id").ValueGeneratedOnAdd().HasColumnType("integer");
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                    b.Property<string>("Platform").IsRequired().HasMaxLength(16).HasColumnType("character varying(16)");
+                    b.Property<string>("PushToken").IsRequired().HasMaxLength(256).HasColumnType("character varying(256)");
+                    b.Property<DateTime>("UpdatedAt").HasColumnType("timestamp with time zone");
+                    b.Property<int>("UserId").HasColumnType("integer");
+                    b.HasKey("Id");
+                    b.HasIndex("PushToken").IsUnique();
+                    b.HasIndex("UserId");
+                    b.ToTable("DevicePushTokens");
+                });
+
             modelBuilder.Entity("EmployeeApi.Models.Employee", b =>
                 {
                     b.Property<int>("Id")
@@ -285,6 +299,12 @@ namespace EmployeeApi.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Employee");
+                });
+            modelBuilder.Entity("EmployeeApi.Models.DevicePushToken", b =>
+                {
+                    b.HasOne("EmployeeApi.Models.User", "User").WithMany().HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade).IsRequired();
+                    b.Navigation("User");
                 });
 #pragma warning restore 612, 618
         }

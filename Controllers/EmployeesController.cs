@@ -142,6 +142,7 @@ public class EmployeesController : ControllerBase
                 user.PasswordHash = new PasswordHasher<User>().HashPassword(user, updated.Password);
             if (invalidateSession)
             {
+                _context.DevicePushTokens.RemoveRange(await _context.DevicePushTokens.Where(d => d.UserId == user.Id).ToListAsync());
                 user.SecurityVersion++;
                 user.RefreshTokenHash = null;
                 user.RefreshTokenExpiry = null;

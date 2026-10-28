@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using EmployeeApi.Data;
 using EmployeeApi.Models;
+using EmployeeApi.Services;
 
 namespace EmployeeApi.Controllers;
 
@@ -12,11 +13,18 @@ namespace EmployeeApi.Controllers;
 public class TasksController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ITaskPushService _notifications;
 
-    public TasksController(AppDbContext context)
+    public TasksController(AppDbContext context, ITaskPushService notifications)
     {
         _context = context;
+        _notifications = notifications;
     }
+
+    private static object TaskResponse(TaskItem task, string? warning) => new {
+        task.Id, task.Title, task.Description, task.EmployeeId, task.Priority, task.Status,
+        task.DueDate, task.CreatedAt, task.UpdatedAt, task.Employee, notificationWarning = warning
+    };
 
     // 1. GET: /api/tasks
     [HttpGet]
@@ -68,6 +76,8 @@ public class TasksController : ControllerBase
     {
         if (task == null || string.IsNullOrWhiteSpace(task.Title))
             return BadRequest(new { message = "Task title is required." });
+        if (task.Priority is not ("Low" or "Medium" or "High") || task.Status is not ("Pending" or "InProgress" or "Completed"))
+            return BadRequest(new { message = "Choose a valid task priority and status." });
 
         var employeeExists = await _context.Employees.AnyAsync(e => e.Id == task.EmployeeId);
         if (!employeeExists)
@@ -80,7 +90,8 @@ public class TasksController : ControllerBase
         _context.Tasks.Add(task);
         await _context.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetById), new { id = task.Id }, task);
+        var warning = await _notifications.NotifyAssignment(task);
+        return CreatedAtAction(nameof(GetById), new { id = task.Id }, TaskResponse(task, warning));
     }
 
     // 5. PUT: /api/tasks/{id}
@@ -88,6 +99,9 @@ public class TasksController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] TaskItem updated)
     {
+        if (string.IsNullOrWhiteSpace(updated.Title) || updated.Priority is not ("Low" or "Medium" or "High") ||
+            updated.Status is not ("Pending" or "InProgress" or "Completed"))
+            return BadRequest(new { message = "A task title, valid priority and valid status are required." });
         var existing = await _context.VisibleTasks(User).FirstOrDefaultAsync(t => t.Id == id);
         if (existing == null)
             return NotFound(new { message = $"Task with ID {id} not found." });
@@ -96,6 +110,7 @@ public class TasksController : ControllerBase
         if (!employeeExists)
             return BadRequest(new { message = $"Employee with ID {updated.EmployeeId} does not exist." });
 
+        var reassigned = existing.EmployeeId != updated.EmployeeId;
         existing.Title = updated.Title;
         existing.Description = updated.Description;
         existing.EmployeeId = updated.EmployeeId;
@@ -105,7 +120,8 @@ public class TasksController : ControllerBase
         existing.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
-        return Ok(existing);
+        var warning = reassigned ? await _notifications.NotifyAssignment(existing) : null;
+        return Ok(TaskResponse(existing, warning));
     }
 
     // 6. PATCH: /api/tasks/{id}/status
