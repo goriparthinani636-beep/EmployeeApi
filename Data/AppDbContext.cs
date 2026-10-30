@@ -11,8 +11,14 @@ public class AppDbContext : DbContext
     public DbSet<Attendance> Attendance { get; set; }
     public DbSet<DevicePushToken> DevicePushTokens { get; set; } = null!;
 
+    public DbSet<LeaveRequest> LeaveRequests { get; set; } = null!;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<LeaveRequest>().HasIndex(l => new { l.EmployeeId, l.StartDate, l.EndDate });
+        modelBuilder.Entity<LeaveRequest>().HasOne(l => l.Employee).WithMany()
+            .HasForeignKey(l => l.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+
         modelBuilder.Entity<DevicePushToken>()
             .HasIndex(t => t.PushToken)
             .IsUnique();

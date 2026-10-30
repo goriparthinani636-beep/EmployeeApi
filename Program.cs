@@ -79,6 +79,7 @@ builder.Services
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<IDevicePushRegistry, DevicePushRegistry>();
 builder.Services.AddScoped<ITaskPushService, TaskPushService>();
+builder.Services.AddScoped<LeavePushService>();
 builder.Services.AddSingleton<PushReceiptTracker>();
 builder.Services.AddHostedService<PushReceiptWorker>();
 builder.Services.AddHttpClient("ExpoPush", client =>

@@ -22,6 +22,25 @@ namespace EmployeeApi.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("EmployeeApi.Models.LeaveRequest", b =>
+                {
+                    b.Property<int>("Id").ValueGeneratedOnAdd().HasColumnType("integer");
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                    b.Property<int>("EmployeeId").HasColumnType("integer");
+                    b.Property<DateOnly>("StartDate").HasColumnType("date");
+                    b.Property<DateOnly>("EndDate").HasColumnType("date");
+                    b.Property<string>("LeaveType").IsRequired().HasMaxLength(30).HasColumnType("character varying(30)");
+                    b.Property<string>("Reason").IsRequired().HasMaxLength(1000).HasColumnType("character varying(1000)");
+                    b.Property<string>("Status").IsRequired().HasMaxLength(20).HasColumnType("character varying(20)");
+                    b.Property<string>("ManagerComment").HasMaxLength(500).HasColumnType("character varying(500)");
+                    b.Property<int?>("ReviewedByUserId").HasColumnType("integer");
+                    b.Property<DateTime?>("ReviewedAt").HasColumnType("timestamp with time zone");
+                    b.Property<DateTime>("CreatedAt").HasColumnType("timestamp with time zone");
+                    b.HasKey("Id");
+                    b.HasIndex("EmployeeId", "StartDate", "EndDate");
+                    b.ToTable("LeaveRequests");
+                });
+
             modelBuilder.Entity("EmployeeApi.Models.Attendance", b =>
                 {
                     b.Property<int>("Id")
@@ -306,6 +325,13 @@ namespace EmployeeApi.Migrations
                         .OnDelete(DeleteBehavior.Cascade).IsRequired();
                     b.Navigation("User");
                 });
+            modelBuilder.Entity("EmployeeApi.Models.LeaveRequest", b =>
+                {
+                    b.HasOne("EmployeeApi.Models.Employee", "Employee").WithMany()
+                        .HasForeignKey("EmployeeId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+                    b.Navigation("Employee");
+                });
+
 #pragma warning restore 612, 618
         }
     }
