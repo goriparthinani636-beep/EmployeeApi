@@ -55,6 +55,45 @@ public class EmployeesController : ControllerBase
         return Ok(employees);
     }
 
+    // Paged directory endpoint. Keep /api/employees as a full-list endpoint for
+    // existing callers that need all employees (for example, task assignment).
+    [HttpGet("page")]
+    public async Task<IActionResult> GetPage(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] string? status = null)
+    {
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = _context.VisibleEmployees(User).AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(e =>
+                e.FirstName.Contains(term) ||
+                e.LastName.Contains(term) ||
+                e.Email.Contains(term) ||
+                e.Department.Contains(term) ||
+                e.Designation.Contains(term));
+        }
+
+        if (string.Equals(status, "Active", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(e => e.Status == "Active");
+        else if (string.Equals(status, "Inactive", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(e => e.Status == "Inactive");
+
+        var total = await query.CountAsync();
+        var items = await query
+            .OrderByDescending(e => e.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return Ok(new { items, total, page, pageSize, hasMore = page * pageSize < total });
+    }
+
     [Authorize(Roles = "Employee")]
     [HttpGet("me")]
     public async Task<IActionResult> GetMine()
