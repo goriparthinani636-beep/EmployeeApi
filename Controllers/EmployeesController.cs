@@ -4,6 +4,7 @@ using EmployeeApi.Data;
 using EmployeeApi.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using EmployeeApi.Services;
 
 namespace EmployeeApi.Controllers;
 
@@ -15,6 +16,13 @@ public class EmployeesController : ControllerBase
     public class EmployeeWriteRequest : Employee
     {
         public string? Password { get; set; }
+        public string? AadhaarNumber { get; set; }
+        public bool AadhaarConsentConfirmed { get; set; }
+    }
+
+    public class AadhaarLastFourRequest
+    {
+        public string LastFour { get; set; } = string.Empty;
     }
 
     private static void CopyDetails(Employee target, Employee source)
@@ -39,10 +47,12 @@ public class EmployeesController : ControllerBase
         request.Status is "Active" or "Inactive";
 
     private readonly AppDbContext _context;
+    private readonly AadhaarNumberProtector _aadhaarProtector;
 
-    public EmployeesController(AppDbContext context)
+    public EmployeesController(AppDbContext context, AadhaarNumberProtector aadhaarProtector)
     {
         _context = context;
+        _aadhaarProtector = aadhaarProtector;
     }
 
     // 1. GET: /api/employees
@@ -102,6 +112,53 @@ public class EmployeesController : ControllerBase
         return employee == null ? NotFound(new { message = "Your login is not linked to an employee profile." }) : Ok(employee);
     }
 
+    [Authorize(Roles = "Employee")]
+    [HttpGet("me/aadhaar-status")]
+    public async Task<IActionResult> GetMyAadhaarStatus()
+    {
+        var employeeId = User.EmployeeId();
+        if (employeeId == null) return BadRequest(new { message = "Your login is not linked to an employee." });
+        var enrollment = await _context.EmployeeAadhaarVerifications.AsNoTracking()
+            .SingleOrDefaultAsync(a => a.EmployeeId == employeeId.Value);
+        var isEnrolled = !string.IsNullOrWhiteSpace(enrollment?.EncryptedAadhaar);
+        return Ok(new { isEnrolled, isVerified = isEnrolled && (enrollment?.IsVerified ?? false) });
+    }
+
+    [Authorize(Roles = "Employee")]
+    [HttpPost("me/aadhaar-verification")]
+    public async Task<IActionResult> VerifyMyAadhaarLastFour([FromBody] AadhaarLastFourRequest request)
+    {
+        var employeeId = User.EmployeeId();
+        if (employeeId == null) return BadRequest(new { message = "Your login is not linked to an employee." });
+        var digits = request.LastFour?.Trim() ?? string.Empty;
+        if (digits.Length != 4 || digits.Any(c => c is < '0' or > '9'))
+            return BadRequest(new { message = "Enter exactly the last 4 Aadhaar digits." });
+
+        var enrollment = await _context.EmployeeAadhaarVerifications
+            .SingleOrDefaultAsync(a => a.EmployeeId == employeeId.Value);
+        if (enrollment == null || string.IsNullOrWhiteSpace(enrollment.EncryptedAadhaar))
+            return Conflict(new { message = "Your manager has not pre-enrolled your verification digits yet." });
+        if (enrollment.IsLocked)
+            return StatusCode(StatusCodes.Status429TooManyRequests,
+                new { message = "Verification is locked after several incorrect attempts. Ask your manager to reset the pre-enrolled digits." });
+        if (enrollment.IsVerified)
+            return Ok(new { isVerified = true, message = "Aadhaar last-four verification is already complete." });
+
+        if (!_aadhaarProtector.MatchesLastFour(digits, enrollment.PreEnrolledLastFourHash))
+        {
+            enrollment.FailedAttempts++;
+            if (enrollment.FailedAttempts >= 5) enrollment.IsLocked = true;
+            await _context.SaveChangesAsync();
+            return BadRequest(new { message = "Those digits do not match the pre-enrolled details. Check with your manager if needed." });
+        }
+
+        enrollment.IsVerified = true;
+        enrollment.VerifiedAt = DateTime.UtcNow;
+        enrollment.FailedAttempts = 0;
+        await _context.SaveChangesAsync();
+        return Ok(new { isVerified = true, message = "Aadhaar last-four verification complete." });
+    }
+
     // 2. GET: /api/employees/{id}
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
@@ -122,18 +179,36 @@ public class EmployeesController : ControllerBase
             return BadRequest(new { message = "Name, email, department, designation and a valid status are required." });
         if (string.IsNullOrEmpty(request.Password) || request.Password.Length < 6)
             return BadRequest(new { message = "An employee login password with at least 6 characters is required." });
+        if (!ValidOptionalAadhaarNumber(request.AadhaarNumber))
+            return BadRequest(new { message = "Aadhaar number must contain exactly 12 digits." });
+        if (!string.IsNullOrWhiteSpace(request.AadhaarNumber) && !request.AadhaarConsentConfirmed)
+            return BadRequest(new { message = "Confirm the employee has consented before saving their Aadhaar number." });
         var email = request.Email.Trim().ToLowerInvariant();
         if (await _context.Users.AnyAsync(u => u.Email.ToLower() == email) ||
             await _context.Employees.AnyAsync(e => e.Email.ToLower() == email))
             return Conflict(new { message = "This email is already used. Choose a different employee login email." });
         var employee = new Employee();
         CopyDetails(employee, request);
+        EmployeeAadhaarVerification? aadhaarEnrollment = null;
+        if (!string.IsNullOrWhiteSpace(request.AadhaarNumber))
+        {
+            var protectedValue = _aadhaarProtector.Protect(request.AadhaarNumber.Trim());
+            aadhaarEnrollment = new EmployeeAadhaarVerification
+            {
+                Employee = employee,
+                EncryptedAadhaar = protectedValue.EncryptedAadhaar,
+                AadhaarNonce = protectedValue.AadhaarNonce,
+                AadhaarTag = protectedValue.AadhaarTag,
+                PreEnrolledLastFourHash = protectedValue.LastFourHash
+            };
+        }
         var user = new User { FirstName = employee.FirstName, LastName = employee.LastName,
             Email = employee.Email, Role = "Employee", Employee = employee,
             IsActive = employee.Status == "Active" };
         user.PasswordHash = new PasswordHasher<User>().HashPassword(user, request.Password);
         _context.Employees.Add(employee);
         _context.Users.Add(user);
+        if (aadhaarEnrollment != null) _context.EmployeeAadhaarVerifications.Add(aadhaarEnrollment);
         // One SaveChanges transaction creates both profile and linked login, or neither.
         try { await _context.SaveChangesAsync(); }
         catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: "23505" })
@@ -153,6 +228,10 @@ public class EmployeesController : ControllerBase
 
         if (!ValidDetails(updated))
             return BadRequest(new { message = "Name, email, department, designation and a valid status are required." });
+        if (!ValidOptionalAadhaarNumber(updated.AadhaarNumber))
+            return BadRequest(new { message = "Aadhaar number must contain exactly 12 digits." });
+        if (!string.IsNullOrWhiteSpace(updated.AadhaarNumber) && !updated.AadhaarConsentConfirmed)
+            return BadRequest(new { message = "Confirm the employee has consented before saving their Aadhaar number." });
         if (!string.IsNullOrEmpty(updated.Password) && updated.Password.Length < 6)
             return BadRequest(new { message = "New passwords must contain at least 6 characters." });
         var email = updated.Email.Trim().ToLowerInvariant();
@@ -161,6 +240,33 @@ public class EmployeesController : ControllerBase
             return Conflict(new { message = "This email is already used by another employee or account." });
         var statusChanged = existing.Status != updated.Status;
         CopyDetails(existing, updated);
+        if (!string.IsNullOrWhiteSpace(updated.AadhaarNumber))
+        {
+            var protectedValue = _aadhaarProtector.Protect(updated.AadhaarNumber.Trim());
+            var enrollment = await _context.EmployeeAadhaarVerifications.FindAsync(id);
+            if (enrollment == null)
+            {
+                _context.EmployeeAadhaarVerifications.Add(new EmployeeAadhaarVerification
+                {
+                    EmployeeId = id,
+                    EncryptedAadhaar = protectedValue.EncryptedAadhaar,
+                    AadhaarNonce = protectedValue.AadhaarNonce,
+                    AadhaarTag = protectedValue.AadhaarTag,
+                    PreEnrolledLastFourHash = protectedValue.LastFourHash
+                });
+            }
+            else
+            {
+                enrollment.EncryptedAadhaar = protectedValue.EncryptedAadhaar;
+                enrollment.AadhaarNonce = protectedValue.AadhaarNonce;
+                enrollment.AadhaarTag = protectedValue.AadhaarTag;
+                enrollment.PreEnrolledLastFourHash = protectedValue.LastFourHash;
+                enrollment.IsVerified = false;
+                enrollment.VerifiedAt = null;
+                enrollment.FailedAttempts = 0;
+                enrollment.IsLocked = false;
+            }
+        }
         var user = await _context.Users.FirstOrDefaultAsync(u => u.EmployeeId == id);
         if (user == null && !string.IsNullOrEmpty(updated.Password))
         {
@@ -192,6 +298,10 @@ public class EmployeesController : ControllerBase
         { return Conflict(new { message = "This email is already used by a login account." }); }
         return Ok(existing);
     }
+
+    private static bool ValidOptionalAadhaarNumber(string? value) =>
+        string.IsNullOrWhiteSpace(value) ||
+        (value.Trim().Length == 12 && value.Trim().All(c => c is >= '0' and <= '9'));
 
     // Remove only the attachment; do not overwrite employee profile fields.
     [Authorize(Roles = "Manager")]

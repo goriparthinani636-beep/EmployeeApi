@@ -32,11 +32,18 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<User>().HasIndex(u => u.EmployeeId).IsUnique();
         modelBuilder.Entity<User>().HasOne(u => u.Employee).WithMany()
             .HasForeignKey(u => u.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<EmployeeAadhaarVerification>().HasKey(a => a.EmployeeId);
+        modelBuilder.Entity<EmployeeAadhaarVerification>()
+            .Property(a => a.PreEnrolledLastFourHash).HasMaxLength(64);
+        modelBuilder.Entity<EmployeeAadhaarVerification>().HasOne(a => a.Employee).WithOne()
+            .HasForeignKey<EmployeeAadhaarVerification>(a => a.EmployeeId)
+            .OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<Attendance>().HasIndex(a => new { a.EmployeeId, a.WorkDate }).IsUnique();
         modelBuilder.Entity<Attendance>().HasOne(a => a.Employee).WithMany()
             .HasForeignKey(a => a.EmployeeId).OnDelete(DeleteBehavior.Restrict);
     }
     public DbSet<Employee> Employees { get; set; }
+    public DbSet<EmployeeAadhaarVerification> EmployeeAadhaarVerifications { get; set; } = null!;
 
     public DbSet<TaskItem> Tasks { get; set; }
 

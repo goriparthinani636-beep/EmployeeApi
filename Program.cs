@@ -78,6 +78,7 @@ builder.Services
 
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<IDevicePushRegistry, DevicePushRegistry>();
+builder.Services.AddSingleton<AadhaarNumberProtector>();
 builder.Services.AddScoped<ITaskPushService, TaskPushService>();
 builder.Services.AddScoped<LeavePushService>();
 builder.Services.AddSingleton<PushReceiptTracker>();

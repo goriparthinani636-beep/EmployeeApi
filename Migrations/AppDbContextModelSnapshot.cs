@@ -139,6 +139,24 @@ namespace EmployeeApi.Migrations
                     b.ToTable("Employees");
                 });
 
+            modelBuilder.Entity("EmployeeApi.Models.EmployeeAadhaarVerification", b =>
+                {
+                    b.Property<int>("EmployeeId").HasColumnType("integer");
+                    b.Property<string>("AadhaarNonce").HasColumnType("text");
+                    b.Property<string>("AadhaarTag").HasColumnType("text");
+                    b.Property<string>("EncryptedAadhaar").HasColumnType("text");
+                    b.Property<int>("FailedAttempts").HasColumnType("integer");
+                    b.Property<bool>("IsLocked").HasColumnType("boolean");
+                    b.Property<bool>("IsVerified").HasColumnType("boolean");
+                    b.Property<string>("PreEnrolledLastFourHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+                    b.Property<DateTime?>("VerifiedAt").HasColumnType("timestamp with time zone");
+                    b.HasKey("EmployeeId");
+                    b.ToTable("EmployeeAadhaarVerifications");
+                });
+
             modelBuilder.Entity("EmployeeApi.Models.FileUpload", b =>
                 {
                     b.Property<int>("Id")
@@ -329,6 +347,15 @@ namespace EmployeeApi.Migrations
                 {
                     b.HasOne("EmployeeApi.Models.Employee", "Employee").WithMany()
                         .HasForeignKey("EmployeeId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+                    b.Navigation("Employee");
+                });
+            modelBuilder.Entity("EmployeeApi.Models.EmployeeAadhaarVerification", b =>
+                {
+                    b.HasOne("EmployeeApi.Models.Employee", "Employee")
+                        .WithOne()
+                        .HasForeignKey("EmployeeApi.Models.EmployeeAadhaarVerification", "EmployeeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                     b.Navigation("Employee");
                 });
 
