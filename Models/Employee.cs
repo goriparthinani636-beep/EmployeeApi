@@ -7,6 +7,7 @@ public class Employee
     public string LastName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string? Phone { get; set; }
+    public bool WhatsAppOptIn { get; set; }
     public string Department { get; set; } = string.Empty;
     public string Designation { get; set; } = string.Empty;
     public string Status { get; set; } = "Active";

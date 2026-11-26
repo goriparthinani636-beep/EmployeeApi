@@ -14,16 +14,19 @@ public class TasksController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly ITaskPushService _notifications;
+    private readonly IWhatsAppCloudApiService _whatsApp;
 
-    public TasksController(AppDbContext context, ITaskPushService notifications)
+    public TasksController(AppDbContext context, ITaskPushService notifications, IWhatsAppCloudApiService whatsApp)
     {
         _context = context;
         _notifications = notifications;
+        _whatsApp = whatsApp;
     }
 
-    private static object TaskResponse(TaskItem task, string? warning) => new {
+    private static object TaskResponse(TaskItem task, string? warning, string whatsAppStatus) => new {
         task.Id, task.Title, task.Description, task.EmployeeId, task.Priority, task.Status,
-        task.DueDate, task.CreatedAt, task.UpdatedAt, task.Employee, notificationWarning = warning
+        task.DueDate, task.CreatedAt, task.UpdatedAt, task.Employee, notificationWarning = warning,
+        whatsAppNotification = whatsAppStatus
     };
 
     // 1. GET: /api/tasks
@@ -90,8 +93,10 @@ public class TasksController : ControllerBase
         _context.Tasks.Add(task);
         await _context.SaveChangesAsync();
 
-        var warning = await _notifications.NotifyAssignment(task);
-        return CreatedAtAction(nameof(GetById), new { id = task.Id }, TaskResponse(task, warning));
+        var pushWarning = await _notifications.NotifyAssignment(task);
+        var whatsAppResult = await _whatsApp.NotifyTaskAssigned(task.EmployeeId, task.Title);
+        var warning = CombineWarnings(pushWarning, whatsAppResult.Warning);
+        return CreatedAtAction(nameof(GetById), new { id = task.Id }, TaskResponse(task, warning, whatsAppResult.Status));
     }
 
     // 5. PUT: /api/tasks/{id}
@@ -120,8 +125,12 @@ public class TasksController : ControllerBase
         existing.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
-        var warning = reassigned ? await _notifications.NotifyAssignment(existing) : null;
-        return Ok(TaskResponse(existing, warning));
+        var pushWarning = reassigned ? await _notifications.NotifyAssignment(existing) : null;
+        var whatsAppResult = reassigned
+            ? await _whatsApp.NotifyTaskAssigned(existing.EmployeeId, existing.Title)
+            : new WhatsAppDeliveryResult("skipped");
+        var warning = CombineWarnings(pushWarning, whatsAppResult.Warning);
+        return Ok(TaskResponse(existing, warning, whatsAppResult.Status));
     }
 
     // 6. PATCH: /api/tasks/{id}/status
@@ -154,5 +163,11 @@ public class TasksController : ControllerBase
         await _context.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    private static string? CombineWarnings(params string?[] warnings)
+    {
+        var messages = warnings.Where(message => !string.IsNullOrWhiteSpace(message)).Distinct().ToArray();
+        return messages.Length == 0 ? null : string.Join(" ", messages);
     }
 }

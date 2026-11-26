@@ -18,16 +18,17 @@ public record ReviewLeave([Required] string Status, [MaxLength(500)] string? Com
 [ApiController]
 [Route("api/leaves")]
 [Authorize(Roles = "Manager,Employee")]
-public class LeavesController(AppDbContext db, LeavePushService notifications) : ControllerBase
+public class LeavesController(AppDbContext db, LeavePushService notifications, IWhatsAppCloudApiService whatsApp) : ControllerBase
 {
     private IQueryable<LeaveRequest> Visible() => db.LeaveRequests.AsNoTracking()
         .Where(l => User.IsManager() || l.EmployeeId == User.EmployeeId());
 
-    private static object LeaveResponse(LeaveRequest leave, string? employeeName, string? warning = null) => new {
+    private static object LeaveResponse(LeaveRequest leave, string? employeeName, string? warning = null,
+        string? whatsAppStatus = null) => new {
         leave.Id, leave.EmployeeId, employeeName, leave.StartDate, leave.EndDate,
         days = leave.EndDate.DayNumber - leave.StartDate.DayNumber + 1,
         leave.LeaveType, leave.Reason, leave.Status, leave.ManagerComment,
-        leave.ReviewedAt, leave.CreatedAt, notificationWarning = warning
+        leave.ReviewedAt, leave.CreatedAt, notificationWarning = warning, whatsAppNotification = whatsAppStatus
     };
 
     [HttpGet]
@@ -89,8 +90,13 @@ public class LeavesController(AppDbContext db, LeavePushService notifications) :
             return await db.LeaveRequests.AnyAsync(l => l.Id == id)
                 ? Conflict(new { message = "This leave request has already been reviewed." }) : NotFound();
         var leave = await db.LeaveRequests.AsNoTracking().Include(l => l.Employee).SingleAsync(l => l.Id == id);
-        var warning = await notifications.NotifyDecision(leave);
-        return Ok(LeaveResponse(leave, leave.Employee!.FirstName + " " + leave.Employee.LastName, warning));
+        var pushWarning = await notifications.NotifyDecision(leave);
+        var whatsAppResult = await whatsApp.NotifyLeaveDecision(leave);
+        var warnings = new[] { pushWarning, whatsAppResult.Warning }
+            .Where(message => !string.IsNullOrWhiteSpace(message)).Distinct().ToArray();
+        var warning = warnings.Length == 0 ? null : string.Join(" ", warnings);
+        return Ok(LeaveResponse(leave, leave.Employee!.FirstName + " " + leave.Employee.LastName,
+            warning, whatsAppResult.Status));
     }
 }
 

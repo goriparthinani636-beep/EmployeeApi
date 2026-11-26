@@ -81,6 +81,7 @@ builder.Services.AddScoped<IDevicePushRegistry, DevicePushRegistry>();
 builder.Services.AddSingleton<AadhaarNumberProtector>();
 builder.Services.AddScoped<ITaskPushService, TaskPushService>();
 builder.Services.AddScoped<LeavePushService>();
+builder.Services.AddScoped<IWhatsAppCloudApiService, WhatsAppCloudApiService>();
 builder.Services.AddSingleton<PushReceiptTracker>();
 builder.Services.AddHostedService<PushReceiptWorker>();
 builder.Services.AddHttpClient("ExpoPush", client =>
@@ -91,6 +92,11 @@ builder.Services.AddHttpClient("ExpoPush", client =>
     var token = builder.Configuration["Expo:AccessToken"];
     if (!string.IsNullOrWhiteSpace(token))
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+});
+builder.Services.AddHttpClient("WhatsAppCloudApi", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 });
 
 builder.Services.AddControllers();

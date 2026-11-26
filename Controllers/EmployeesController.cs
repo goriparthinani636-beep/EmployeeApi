@@ -31,6 +31,7 @@ public class EmployeesController : ControllerBase
         target.LastName = source.LastName.Trim();
         target.Email = source.Email.Trim().ToLowerInvariant();
         target.Phone = source.Phone;
+        target.WhatsAppOptIn = source.WhatsAppOptIn;
         target.Department = source.Department.Trim();
         target.Designation = source.Designation.Trim();
         target.Status = source.Status;
@@ -183,6 +184,8 @@ public class EmployeesController : ControllerBase
             return BadRequest(new { message = "Aadhaar number must contain exactly 12 digits." });
         if (!string.IsNullOrWhiteSpace(request.AadhaarNumber) && !request.AadhaarConsentConfirmed)
             return BadRequest(new { message = "Confirm the employee has consented before saving their Aadhaar number." });
+        if (request.WhatsAppOptIn && string.IsNullOrWhiteSpace(request.Phone))
+            return BadRequest(new { message = "An employee phone number is required when WhatsApp updates are enabled." });
         var email = request.Email.Trim().ToLowerInvariant();
         if (await _context.Users.AnyAsync(u => u.Email.ToLower() == email) ||
             await _context.Employees.AnyAsync(e => e.Email.ToLower() == email))
@@ -232,6 +235,8 @@ public class EmployeesController : ControllerBase
             return BadRequest(new { message = "Aadhaar number must contain exactly 12 digits." });
         if (!string.IsNullOrWhiteSpace(updated.AadhaarNumber) && !updated.AadhaarConsentConfirmed)
             return BadRequest(new { message = "Confirm the employee has consented before saving their Aadhaar number." });
+        if (updated.WhatsAppOptIn && string.IsNullOrWhiteSpace(updated.Phone))
+            return BadRequest(new { message = "An employee phone number is required when WhatsApp updates are enabled." });
         if (!string.IsNullOrEmpty(updated.Password) && updated.Password.Length < 6)
             return BadRequest(new { message = "New passwords must contain at least 6 characters." });
         var email = updated.Email.Trim().ToLowerInvariant();
