@@ -49,4 +49,6 @@ public class AppDbContext : DbContext
 
     public DbSet<FileUpload> FileUploads { get; set; }
         = null!;
+
+    public DbSet<CompanyProfile> CompanyProfiles { get; set; } = null!;
 }
